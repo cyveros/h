@@ -29,7 +29,7 @@ $(function(){
         case 'detail':
             sis.tinker.detail();
             break;
-    }   
+    }
 });
 
 var config = {
@@ -79,13 +79,23 @@ var utils = {
         $('link[rel="stylesheet"], script').remove();
         $('*[style]').removeAttr('style');
         $(document).off('load');
+    },
+    nano: function(template, data) {
+        return template.replace(/\{([\w\.]*)\}/g, function(str, key) {
+            var keys = key.split("."), v = data[keys.shift()];
+            for (var i = 0, l = keys.length; i < l; i++) v = v[keys[i]];
+            return (typeof v !== "undefined" && v !== null) ? v : "";
+        });
     }
 };
 
 function Page() {
     var self = this;
 
-    this.inPage = false;
+    this.settings = {
+        data: (new DataProvider()),
+        inPage: false
+    };
 
     this.load = {
         css: function(url) {
@@ -96,6 +106,9 @@ function Page() {
         },
         modal: function() {
             $('body').append('<div id="modalContainer" class="modal fade"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button><h4 class="modal-title">Modal title</h4></div><div class="modal-body"><p>One fine body&hellip;</p></div><div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Close</button><button type="button" class="btn btn-primary">Get Torrent</button></div></div></div></div>');
+        },
+        navbar: function() {
+            $('body').prepend('<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation"><div class="container-fluid"><div class="navbar-header"><button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1"><span class="sr-only">Toggle navigation</span><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button><a class="navbar-brand" href="#">第一会所</a></div><div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1"><ul class="nav navbar-nav"><li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">板块 <b class="caret"></b></a><ul class="dropdown-menu"><li><a href="forumdisplay.php?fid=519">原创培训</a></li><li><a href="forumdisplay.php?fid=143">亚无原创</a></li><li><a href="forumdisplay.php?fid=25">亚无转贴</a></li><li><a href="forumdisplay.php?fid=230">亚有原创</a></li><li><a href="forumdisplay.php?fid=58">亚有转贴</a></li><li><a href="forumdisplay.php?fid=229">欧无原创</a></li><li><a href="forumdisplay.php?fid=77">欧无转贴</a></li><li><a href="forumdisplay.php?fid=231">动漫原创</a></li><li><a href="forumdisplay.php?fid=27">动漫转贴</a></li><li><a href="forumdisplay.php?fid=406">新手原创</a></li><li><a href="forumdisplay.php?fid=394">分流宣传</a></li><li><a href="forumdisplay.php?fid=530">自拍原创</a></li></ul></li><li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">分类 <b class="caret"></b></a><ul id="categories" class="dropdown-menu"></ul></li></ul><ul class="nav navbar-nav navbar-right"><li id="navPag"><a href="#"></a></li><li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Dropdown <b class="caret"></b></a><ul class="dropdown-menu"><li><a href="#">Action</a></li><li><a href="#">Another action</a></li><li><a href="#">Something else here</a></li><li class="divider"></li><li><a href="#">Separated link</a></li></ul></li></ul></div></div></nav>');
         },
         includeCSS: function(resource) {
             var css = GM_getResourceText(resource);
@@ -124,8 +137,8 @@ function Page() {
             $('#wrapper').addClass('container');
         },
         list: function(){
-            $('#wrapper > div:first-child').addClass('navbar navbar-default navbar-fixed-top');
-            $('#wrapper > div:not(.threadlist, .navbar)').remove();
+            self.load.navbar();
+            $('#wrapper > div:not(.threadlist, :first-child)').remove();
             $('#wrapper > ul').remove();
             $('.threadlist table:not(:last-child)').remove();
             $('#foruminfo').remove();
@@ -133,7 +146,9 @@ function Page() {
             $('.pages:eq(1), #newspecial_menu').remove();
             $('.folder, .icon, .lastpost, .category, tr .nums:not(:last-child), cite, .hot label, .new label, .lock label, .common label').remove();
             
-            $('.pages').replaceWith(utils.pagination.create('.pages > *'));
+            $('#wrapper').prepend(utils.pagination.create('.pages > *'));
+            $('#wrapper div:first-child').remove();
+
             $('.pages_btns').addClass('container');
             
             $('.threadlist').html($('form').html());
@@ -143,24 +158,42 @@ function Page() {
             $('#wrapper').css({'padding-top': '80px'}).append(content);
             
             var tbody = $('tbody');
-            var tbodyContainer = $('<tbody></tbody>');
+            var tbodyContainer = '<tbody>';
+
+            var threadId, category, article;
             
             $.each(tbody, function(){
-                var threadId = $(this).prop('id').replace('normalthread_', '');
-                tbodyContainer.append($(this).find('tr').attr('data-thread-id', threadId));
+                if ($(this).html() != '') {
+                    threadId = $(this).prop('id').replace('normalthread_', '');
+                    category = $(this).find('th > em a'),
+
+                    article = {
+                        id: threadId,
+                        title: $(this).find('th > span:eq(0) a').text(),
+                        categoryId: category.prop('href').match(/typeid=([^&]+)/)[1],
+                        categoryName: category.text(),
+                        date: $(this).find('td').text()
+                    };
+
+                    self.settings.data.push('articles', article);
+                    self.settings.data.push('categories', {id: article.categoryId, name: article.categoryName});
+
+                    tbodyContainer += utils.nano('<tr><td><a href="forumdisplay.php?fid=230&filter=type&typeid={categoryId}" class="badge">{categoryName}</a><a href="thread-{id}-1-1.html">{title}</a></td><td><span class="label label-success">{date}</span></td></tr>', article);    
+                }
             });
+
+            tbodyContainer += '</tbody>';
             
             $('.table').html(tbodyContainer);
 
-            $('a').attr('target', '_blank');
+            self.tinker.category();
 
             self.load.modal();
 
-            $(document).on('click', '.threadlist a', function(e){
+            $(document).on('click', '.threadlist a:not(.badge)', function(e){
                 e.preventDefault();
 
                 self.open($(this).prop('href'));
-
             });
         },
         detail: function(){
@@ -170,7 +203,7 @@ function Page() {
             $('#foruminfo').remove();
             $('#wrapper > ul').remove();
 
-            if (self.inPage)
+            if (self.settings.inPage)
                 $('.modal-body .pages_btns').remove();
             else
                 $('.pages_btns').remove();
@@ -183,7 +216,7 @@ function Page() {
             $('fieldset').remove();
             $('.postratings').remove();
 
-            if (self.inPage) {
+            if (self.settings.inPage) {
                 var title = $('.modal-body h1').text();
                 var contents = $('.modal-body .postmessage').clone();
 
@@ -242,6 +275,16 @@ function Page() {
                 $('h1 a').remove();
                 $('h1').replaceWith('<h2>' + $('h1').html() + '</h2>');
             }
+        },
+        category: function() {
+            var categories = self.settings.data.find('categories'),
+                output = '';
+
+            $.each(categories, function() {
+                output += utils.nano('<li><a href="forumdisplay.php?fid=230&filter=type&typeid={id}">{name}</a></li>', this);
+            });
+
+            $('#categories').html(output);
         }
     };
 
@@ -268,7 +311,7 @@ function Page() {
 
                 $('.modal-body').html(html.find('form').html());
                 self.tinker.common();
-                self.inPage = true;
+                self.settings.inPage = true;
 
                 self.tinker.detail();
             }
@@ -280,4 +323,76 @@ function Page() {
         });
 
     }
+}
+
+function DataProvider() {
+    var self = this;
+
+    this.settings = {
+        data: {}
+    };
+
+    this.push = function(key, value) {
+        if (typeof(value) === 'object') {
+            if (self.find(key)) {
+                if ( ! self.search(key, 'id', value.id))
+                    self.settings.data[key].push(value);
+            } else {
+                self.settings.data[key] = [value];
+            }
+        } else {
+            var tmp = {};
+            tmp[key] = value;
+            self.settings.data = $.extend(self.settings.data, tmp);
+        }
+    };
+
+    this.void = function(key) {
+        delete self.settings.data[key];
+    };
+
+    this.remove = function(collection, value){
+        var index = self.settings.data[collection].indexOf(value);
+        
+        if (index != -1) {
+            self.settings.data.splice(index, 1);
+        }
+    }
+
+    this.find = function(key) {
+        if (self.settings.data.hasOwnProperty(key))
+            return self.settings.data[key];
+
+        return false;
+    };
+
+    this.exist = function(key) {
+        if (self.settings.data.hasOwnProperty(key))
+            return true;
+
+        return false;
+    };
+
+    this.search = function(collection, key, value) {
+        var obj = null;
+
+        if (self.exist(collection)) {
+            $.each(self.settings.data[collection], function(){
+                if (this[key] == value) {
+                    obj = this;
+                    return true;
+                }
+            });
+        }
+
+        if (obj !== null) {
+            return obj;
+        }
+
+        return false;
+    };
+
+    this.all = function(){
+        console.log(self.settings.data);
+    };
 }
